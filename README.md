@@ -1,6 +1,6 @@
 # AI Studio Chat Customizer
 
-**Version:** 1.6.0 (or your current version)
+**Version:** 1.6.0
 **Author:** pirelike
 
 Customize the chat message appearance in Google's AI Studio (`aistudio.google.com`) for enhanced readability and a personalized experience. This userscript allows you to:
