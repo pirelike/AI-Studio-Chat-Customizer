@@ -35,12 +35,12 @@ Customize the chat message appearance in Google's AI Studio (`aistudio.google.co
 
 *   *Example: Settings Panel*
     ```
-    ![Screenshot_20250605_144228](https://github.com/user-attachments/assets/7474374e-61be-4bf2-8a8f-0e6157c4287b)
+![Screenshot_20250605_144228](https://github.com/user-attachments/assets/7474374e-61be-4bf2-8a8f-0e6157c4287b)
     ```
 *   *Example: Customized Chat Text*
     ```
-    ![Screenshot_20250605_144017](https://github.com/user-attachments/assets/e44e7eb4-896d-48ff-927b-a41fd058da2b)
-    ![Screenshot_20250605_144355](https://github.com/user-attachments/assets/7de3a8c7-1ae5-4bd4-a972-1e2fd0856c7f)
+![Screenshot_20250605_144017](https://github.com/user-attachments/assets/e44e7eb4-896d-48ff-927b-a41fd058da2b)
+![Screenshot_20250605_144355](https://github.com/user-attachments/assets/7de3a8c7-1ae5-4bd4-a972-1e2fd0856c7f)
     ```
 
 ## Installation
