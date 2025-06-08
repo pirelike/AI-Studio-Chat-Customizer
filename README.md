@@ -56,8 +56,8 @@ To use this userscript, you need a userscript manager browser extension. Popular
 
 2.  **Install the AI Studio Chat Customizer Script:**
     *   **Option A: Install from GitHub Raw File (Recommended)**
-        1.  Navigate to the script file in this repository: `[Link to your .user.js file on GitHub, e.g., https://github.com/YOUR_USERNAME/YOUR_REPOSITORY/raw/main/ai-studio-chat-customizer.user.js]`
-            *(Make sure this link points to the **raw** version of the `.user.js` file)*
+        1.  Navigate to the script file in this repository: `[https://github.com/pirelike/AI-Studio-Chat-Customizer/blob/main/script.user.js]`
+            *(Make sure this link points to the **raw** version of the `script.user.js` file)*
         2.  Your userscript manager (e.g., Tampermonkey) should automatically detect the userscript and open an installation tab.
         3.  Review the script's permissions and details.
         4.  Click the "Install" button.
@@ -66,9 +66,9 @@ To use this userscript, you need a userscript manager browser extension. Popular
         1.  Open your userscript manager's dashboard (usually by clicking its icon in your browser's toolbar).
         2.  Find an option like "Create a new script" or a "+" icon.
         3.  Delete any boilerplate code in the editor.
-        4.  Go to the script file in this repository: `[Link to your .user.js file on GitHub, e.g., https://github.com/YOUR_USERNAME/YOUR_REPOSITORY/blob/main/ai-studio-chat-customizer.user.js]`
+        4.  Go to the script file in this repository: `[https://github.com/pirelike/AI-Studio-Chat-Customizer/blob/main/script.user.js]`
             *(This time, the link to the regular view of the file is fine)*
-        5.  Copy the entire content of the `ai-studio-chat-customizer.user.js` file.
+        5.  Copy the entire content of the `script.user.js` file.
         6.  Paste the copied code into the userscript manager's editor.
         7.  Save the script (File > Save, or a save icon).
 
@@ -122,8 +122,3 @@ Your settings are automatically saved and will be reapplied the next time you vi
 ## Contributing
 
 Feel free to fork this repository, make improvements, and submit pull requests! If you encounter issues or have feature suggestions, please open an issue on GitHub.
-
-## License
-
-This project is licensed under the [MIT License](LICENSE.txt) (or choose another license if you prefer).
-*(You'll need to add a `LICENSE.txt` file with the MIT license text if you choose MIT)*
