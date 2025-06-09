@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         AI Studio Chat Customizer (Advanced UI v1.8.3)
+// @name         AI Studio Chat Customizer (Advanced UI v1.9.0)
 // @namespace    http://tampermonkey.net/
-// @version      1.8.3
-// @description  Prioritizes local MS fonts, falls back to Google Fonts. Justifies/aligns text, changes font size (+/-) and type. Panel closes on outside click or Esc, with focus management. Now supports dark mode!
+// @version      1.9.0
+// @description  Prioritizes local MS fonts, falls back to Google Fonts. Justifies/aligns text, changes font size (+/-), line spacing (+/-), and type. Panel closes on outside click or Esc, with focus management. Now supports dark mode!
 // @author       pirelike
 // @match        https://aistudio.google.com/*
 // @grant        GM_setValue
@@ -17,10 +17,12 @@
 
     // --- Configuration ---
     const DEFAULT_FONT_SIZE = "16px";
+    const FONT_SIZE_STEP = 1;
+    const DEFAULT_LINE_SPACING = "1.6"; // NEW: Default line spacing
+    const LINE_SPACING_STEP = 0.1;      // NEW: Step for increment/decrement
     const ULTIMATE_FALLBACK_FONT = "sans-serif";
     const DEFAULT_FONT_FAMILY_KEY = "DEFAULT_SANS_SERIF";
     const DEFAULT_TEXT_ALIGN = "justify";
-    const FONT_SIZE_STEP = 1;
 
     const PREDEFINED_FONTS = [
         { name: "Default System Sans-Serif", value: "DEFAULT_SANS_SERIF", css: "sans-serif" },
@@ -37,7 +39,9 @@
 
     const DEFAULT_FONT_FAMILY_CSS = PREDEFINED_FONTS.find(f => f.value === DEFAULT_FONT_FAMILY_KEY)?.css || ULTIMATE_FALLBACK_FONT;
 
+    // --- Storage Keys ---
     const STORAGE_KEY_FONT_SIZE = `${SCRIPT_PREFIX}_fontSize`;
+    const STORAGE_KEY_LINE_SPACING = `${SCRIPT_PREFIX}_lineSpacing`; // NEW
     const STORAGE_KEY_FONT_FAMILY_KEY = `${SCRIPT_PREFIX}_fontFamilyKey`;
     const STORAGE_KEY_CUSTOM_FONT_VALUE = `${SCRIPT_PREFIX}_customFontValue`;
     const STORAGE_KEY_TEXT_ALIGN = `${SCRIPT_PREFIX}_textAlign`;
@@ -47,9 +51,11 @@
     const GOOGLE_FONTS_LINK_ID_PREFIX = `${SCRIPT_PREFIX}-google-font-`;
     const SIDEBAR_SELECTOR = 'div.toggles-container';
 
-    let currentFontSize, currentFontFamilyKey, currentCustomFontValue, currentTextAlign;
-    let controlPanel, fontSizeInput, fontFamilySelect, fontFamilyCustomInput,
-        textAlignButton, settingsToggleButton, fontSizeIncButton, fontSizeDecButton;
+    // --- State Variables ---
+    let currentFontSize, currentFontFamilyKey, currentCustomFontValue, currentTextAlign, currentLineSpacing;
+    let controlPanel, fontSizeInput, fontSizeIncButton, fontSizeDecButton,
+        lineSpacingInput, lineSpacingIncButton, lineSpacingDecButton, // NEW
+        fontFamilySelect, fontFamilyCustomInput, textAlignButton, settingsToggleButton;
     let globalSidebarContainer = null;
     let activeGoogleFontLinks = new Set();
     let isDarkMode = false;
@@ -166,15 +172,20 @@
             styleElement.id = STYLE_ID;
             document.head.appendChild(styleElement);
         }
+
+        // --- UPDATED CSS ---
+        // Added line-height property to both rule blocks
         styleElement.textContent = `
             div.chat-turn-container.model ms-prompt-chunk > ms-text-chunk ms-cmark-node,
             div.chat-turn-container.model ms-prompt-chunk > ms-text-chunk ms-cmark-node span.inline-code {
                 font-size: ${currentFontSize} !important;
                 font-family: ${finalFontCss} !important;
+                line-height: ${currentLineSpacing} !important;
             }
             div.chat-turn-container.model ms-prompt-chunk > ms-text-chunk ms-cmark-node p,
             div.chat-turn-container.model ms-prompt-chunk > ms-text-chunk ms-cmark-node li {
                 text-align: ${currentTextAlign} !important;
+                line-height: ${currentLineSpacing} !important;
                 -webkit-hyphens: none !important; -moz-hyphens: none !important; -ms-hyphens: none !important; hyphens: none !important;
             }
         `;
@@ -222,7 +233,7 @@
             .script-button-small { display: flex; align-items: center; justify-content: center; padding: 5px 10px; min-width: 30px; border: none; cursor: pointer; font-size: 16px; line-height: 1; box-sizing: border-box; height: 38px; }
             .fs-control-container { display: flex; align-items: stretch; margin-bottom: 10px; border-radius: 4px; overflow: hidden; }
             .fs-control-container > * { border-radius: 0 !important; }
-            #${SCRIPT_PREFIX}-fontSizeInput { flex-grow: 1; text-align: center; margin: 0; width: auto; margin-bottom: 0; }
+            #${SCRIPT_PREFIX}-fontSizeInput, #${SCRIPT_PREFIX}-lineSpacingInput { flex-grow: 1; text-align: center; margin: 0; width: auto; margin-bottom: 0; }
             .btn-decr { background-color: #dc3545; color: white; }
             .btn-incr { background-color: #28a745; color: white; }
             /* --- CSS FIX: Force full width --- */
@@ -236,7 +247,7 @@
             #${SCRIPT_PREFIX}-panelTitle, #${SCRIPT_PREFIX}-control-panel label { color: #333; }
             .script-input-base { border: 1px solid #ddd; background-color: #fff; color: #333; }
             .fs-control-container { border: 1px solid #ddd; }
-            #${SCRIPT_PREFIX}-fontSizeInput { border-left: 1px solid #ddd !important; border-right: 1px solid #ddd !important; }
+            #${SCRIPT_PREFIX}-fontSizeInput, #${SCRIPT_PREFIX}-lineSpacingInput { border-left: 1px solid #ddd !important; border-right: 1px solid #ddd !important; }
             .script-input-base:focus { outline: 2px solid #007bff; outline-offset: -2px; }
             /* --- CSS FIX: Force button to look like an input in light mode --- */
             .btn-full-width.script-input-base { background-color: #fff !important; border: 1px solid #ddd !important; color: #333 !important; }
@@ -251,7 +262,7 @@
             .script-input-base { border: 1px solid #555; background-color: #333; color: #e0e0e0; }
             .script-input-base:hover:not(:focus) { border-color: #777; }
             .fs-control-container { border: 1px solid #555; }
-            #${SCRIPT_PREFIX}-fontSizeInput { border-left: 1px solid #555 !important; border-right: 1px solid #555 !important; }
+            #${SCRIPT_PREFIX}-fontSizeInput, #${SCRIPT_PREFIX}-lineSpacingInput { border-left: 1px solid #555 !important; border-right: 1px solid #555 !important; }
             .script-input-base:focus { outline: 2px solid #4dabf7; outline-offset: -2px; }
             .script-input-base::placeholder { color: #aaa; }
         `;
@@ -275,6 +286,8 @@
         title.id = `${SCRIPT_PREFIX}-panelTitle`;
         title.textContent = 'Chat Display Settings';
         controlPanel.appendChild(title);
+
+        // --- Font Size Controls ---
         const fsLabel = document.createElement('label');
         fsLabel.textContent = 'Font Size: ';
         fsLabel.htmlFor = `${SCRIPT_PREFIX}-fontSizeInput`;
@@ -314,6 +327,56 @@
         });
         fsControlContainer.appendChild(fontSizeIncButton);
         controlPanel.appendChild(fsControlContainer);
+
+        // --- NEW: Line Spacing Controls ---
+        const lsLabel = document.createElement('label');
+        lsLabel.textContent = 'Line Spacing: ';
+        lsLabel.htmlFor = `${SCRIPT_PREFIX}-lineSpacingInput`;
+        controlPanel.appendChild(lsLabel);
+        const lsControlContainer = document.createElement('div');
+        lsControlContainer.className = 'fs-control-container';
+        lineSpacingDecButton = document.createElement('button');
+        lineSpacingDecButton.textContent = '-';
+        lineSpacingDecButton.className = 'script-button-small btn-decr';
+        lineSpacingDecButton.addEventListener('click', async () => {
+            let currentValue = parseFloat(lineSpacingInput.value) || parseFloat(DEFAULT_LINE_SPACING);
+            let newValue = Math.max(1.0, currentValue - LINE_SPACING_STEP); // Prevent going below 1.0
+            lineSpacingInput.value = currentLineSpacing = newValue.toFixed(1);
+            await GM_setValue(STORAGE_KEY_LINE_SPACING, currentLineSpacing);
+            updateStylesAndFontLoading();
+        });
+        lsControlContainer.appendChild(lineSpacingDecButton);
+        lineSpacingInput = document.createElement('input');
+        lineSpacingInput.id = `${SCRIPT_PREFIX}-lineSpacingInput`;
+        lineSpacingInput.type = 'text';
+        lineSpacingInput.value = currentLineSpacing;
+        lineSpacingInput.className = 'script-input-base';
+        lineSpacingInput.addEventListener('change', async () => {
+            let val = parseFloat(lineSpacingInput.value.trim());
+            if (!isNaN(val)) {
+                currentLineSpacing = String(val);
+            } else {
+                 currentLineSpacing = DEFAULT_LINE_SPACING;
+            }
+            lineSpacingInput.value = currentLineSpacing;
+            await GM_setValue(STORAGE_KEY_LINE_SPACING, currentLineSpacing);
+            updateStylesAndFontLoading();
+        });
+        lsControlContainer.appendChild(lineSpacingInput);
+        lineSpacingIncButton = document.createElement('button');
+        lineSpacingIncButton.textContent = '+';
+        lineSpacingIncButton.className = 'script-button-small btn-incr';
+        lineSpacingIncButton.addEventListener('click', async () => {
+            let currentValue = parseFloat(lineSpacingInput.value) || parseFloat(DEFAULT_LINE_SPACING);
+            let newValue = currentValue + LINE_SPACING_STEP;
+            lineSpacingInput.value = currentLineSpacing = newValue.toFixed(1);
+            await GM_setValue(STORAGE_KEY_LINE_SPACING, currentLineSpacing);
+            updateStylesAndFontLoading();
+        });
+        lsControlContainer.appendChild(lineSpacingIncButton);
+        controlPanel.appendChild(lsControlContainer);
+
+        // --- Font Family Controls ---
         const ffLabel = document.createElement('label');
         ffLabel.textContent = 'Font Family: ';
         ffLabel.htmlFor = `${SCRIPT_PREFIX}-fontFamilySelect`;
@@ -336,6 +399,8 @@
         fontFamilyCustomInput.style.display = 'none';
         fontFamilyCustomInput.addEventListener('input', handleFontFamilyChange);
         controlPanel.appendChild(fontFamilyCustomInput);
+
+        // --- Text Align Control ---
         textAlignButton = document.createElement('button');
         textAlignButton.className = 'script-input-base btn-full-width';
         updateTextAlignButtonText();
@@ -346,6 +411,7 @@
             updateStylesAndFontLoading();
         });
         controlPanel.appendChild(textAlignButton);
+
         document.body.appendChild(controlPanel);
     }
 
@@ -394,18 +460,23 @@
 
     async function init() {
         try {
+            // --- UPDATED: Load all settings ---
             currentFontSize = await GM_getValue(STORAGE_KEY_FONT_SIZE, DEFAULT_FONT_SIZE);
+            currentLineSpacing = await GM_getValue(STORAGE_KEY_LINE_SPACING, DEFAULT_LINE_SPACING); // NEW
             currentFontFamilyKey = await GM_getValue(STORAGE_KEY_FONT_FAMILY_KEY, DEFAULT_FONT_FAMILY_KEY);
             currentCustomFontValue = await GM_getValue(STORAGE_KEY_CUSTOM_FONT_VALUE, "");
             currentTextAlign = await GM_getValue(STORAGE_KEY_TEXT_ALIGN, DEFAULT_TEXT_ALIGN);
         } catch (error) {
             console.error(`${SCRIPT_PREFIX}: Error loading settings:`, error);
-            [currentFontSize, currentFontFamilyKey, currentCustomFontValue, currentTextAlign] = [DEFAULT_FONT_SIZE, DEFAULT_FONT_FAMILY_KEY, "", DEFAULT_TEXT_ALIGN];
+            // --- UPDATED: Fallback for all settings ---
+            [currentFontSize, currentLineSpacing, currentFontFamilyKey, currentCustomFontValue, currentTextAlign] =
+            [DEFAULT_FONT_SIZE, DEFAULT_LINE_SPACING, DEFAULT_FONT_FAMILY_KEY, "", DEFAULT_TEXT_ALIGN];
         }
 
         createSettingsPanel();
         setInitialFontFamilyUI();
         updateTextAlignButtonText();
+        lineSpacingInput.value = currentLineSpacing; // NEW: Set initial value for line spacing input
         updateStylesAndFontLoading();
         window.addEventListener('resize', repositionControlPanel);
         const observer = new MutationObserver(() => updateDarkModeState());
