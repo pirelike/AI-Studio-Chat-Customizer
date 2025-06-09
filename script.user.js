@@ -3,7 +3,7 @@
 // @namespace    http://tampermonkey.net/
 // @version      1.8.3
 // @description  Prioritizes local MS fonts, falls back to Google Fonts. Justifies/aligns text, changes font size (+/-) and type. Panel closes on outside click or Esc, with focus management. Now supports dark mode!
-// @author       pirelike (with AI improvements)
+// @author       pirelike
 // @match        https://aistudio.google.com/*
 // @grant        GM_setValue
 // @grant        GM_getValue
