@@ -1,6 +1,6 @@
 # 🎨 AI Studio Chat Customizer
 
-[![Version](https://img.shields.io/badge/version-1.9.0-blue)](https://github.com/pirelike/AI-Studio-Chat-Customizer/blob/main/script.user.js)
+[![Version](https://img.shields.io/badge/version-1.9.1-blue)](https://github.com/pirelike/AI-Studio-Chat-Customizer/blob/main/script.user.js)
 [![Platform](https://img.shields.io/badge/platform-Tampermonkey-orange)](https://www.tampermonkey.net/)
 [![License](https://img.shields.io/badge/license-MIT-green)](https://github.com/pirelike/AI-Studio-Chat-Customizer/blob/main/LICENSE)
 
@@ -38,7 +38,7 @@ A userscript manager is a browser extension that runs scripts like this one. You
 
 Choose your browser below and click the link to install the recommended extension:
 
-*   **Chrome**: [Tampermonkey](https://chrome.google.com/webstore/detail/tampermonkey/dhdgffkkebhmkfjojejmpbldmpobfkfo) Broken rn 1.6 worked lol
+*   **Chrome**: [Tampermonkey](https://chrome.google.com/webstore/detail/tampermonkey/dhdgffkkebhmkfjojejmpbldmpobfkfo)
 *   **Firefox**: [Tampermonkey](https://addons.mozilla.org/en-US/firefox/addon/tampermonkey/) or [Greasemonkey](https://addons.mozilla.org/en-US/firefox/addon/greasemonkey/)
 *   **Edge**: [Tampermonkey](https://microsoftedge.microsoft.com/addons/detail/tampermonkey/iikmkjmpaadaobahmlepeloendndfphd)
 *   **Safari**: [Userscripts](https://apps.apple.com/us/app/userscripts/id1463298887)
