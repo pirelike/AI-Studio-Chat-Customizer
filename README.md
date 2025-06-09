@@ -41,7 +41,7 @@ Choose your browser below and click the link to install the recommended extensio
 *   **Chrome**: [Tampermonkey](https://chrome.google.com/webstore/detail/tampermonkey/dhdgffkkebhmkfjojejmpbldmpobfkfo)
 *   **Firefox**: [Tampermonkey](https://addons.mozilla.org/en-US/firefox/addon/tampermonkey/) or [Greasemonkey](https://addons.mozilla.org/en-US/firefox/addon/greasemonkey/)
 *   **Edge**: [Tampermonkey](https://microsoftedge.microsoft.com/addons/detail/tampermonkey/iikmkjmpaadaobahmlepeloendndfphd)
-*   **Safari**: [Userscripts](https://apps.apple.com/us/app/userscripts/id1463298887) (Note: This is a paid app from the App Store)
+*   **Safari**: [Userscripts](https://apps.apple.com/us/app/userscripts/id1463298887)
 *   **Brave / Opera / Vivaldi**: Install [Tampermonkey](https://chrome.google.com/webstore/detail/tampermonkey/dhdgffkkebhmkfjojejmpbldmpobfkfo) from the Chrome Web Store.
 
 ### Step 2: Install the AI Studio Chat Customizer Script
