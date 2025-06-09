@@ -427,23 +427,47 @@
         }
     }
 
+    // --- REVERTED FUNCTION for Cross-Browser Compatibility ---
     function addToggleButtonToSidebar(sidebarContainer) {
         globalSidebarContainer = sidebarContainer;
         settingsToggleButton = document.createElement('button');
+
+        // This button creation logic is from v1.6.0 to ensure it works on all browsers
         settingsToggleButton.className = "mdc-icon-button mat-mdc-icon-button mat-mdc-button-base gmat-mdc-button mat-unthemed";
+        settingsToggleButton.setAttribute('type', 'button');
+        settingsToggleButton.setAttribute('mattooltip', 'Chat Display Settings');
         settingsToggleButton.title = 'Chat Display Settings';
-        Object.assign(settingsToggleButton.dataset, { mattooltip: 'Chat Display Settings', mattooltipposition: 'left' });
+        settingsToggleButton.setAttribute('mattooltipposition', 'left');
+        settingsToggleButton.setAttribute('aria-label', 'Open Chat Display Settings');
         settingsToggleButton.setAttribute('aria-haspopup', 'dialog');
         settingsToggleButton.setAttribute('aria-expanded', 'false');
-        settingsToggleButton.innerHTML = `
-            <span class="mat-mdc-button-persistent-ripple mdc-icon-button__ripple"></span>
-            <span class="material-symbols-outlined notranslate" aria-hidden="true">text_format</span>
-        `;
+
+        const rippleSpan = document.createElement('span');
+        rippleSpan.className = 'mat-mdc-button-persistent-ripple mdc-icon-button__ripple';
+        settingsToggleButton.appendChild(rippleSpan);
+
+        const iconSpan = document.createElement('span');
+        iconSpan.textContent = 'text_format';
+        iconSpan.className = 'material-symbols-outlined notranslate';
+        iconSpan.setAttribute('aria-hidden', 'true');
+        settingsToggleButton.appendChild(iconSpan);
+
+        const focusIndicator = document.createElement('span');
+        focusIndicator.className = 'mat-focus-indicator';
+        settingsToggleButton.appendChild(focusIndicator);
+
+        const touchTarget = document.createElement('span');
+        touchTarget.className = 'mat-mdc-button-touch-target';
+        settingsToggleButton.appendChild(touchTarget);
+
+        // This event listener uses the advanced open/close panel functions from v1.9.1
         settingsToggleButton.addEventListener('click', () => {
             if (controlPanel.style.display === 'none') openPanel();
             else closePanel();
         });
+
         sidebarContainer.appendChild(settingsToggleButton);
+        console.log(`${SCRIPT_PREFIX}: Toggle button (icon: text_format) added to sidebar.`);
     }
 
     async function init() {
