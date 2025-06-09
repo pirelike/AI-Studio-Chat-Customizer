@@ -38,7 +38,7 @@ A userscript manager is a browser extension that runs scripts like this one. You
 
 Choose your browser below and click the link to install the recommended extension:
 
-*   **Chrome**: [Tampermonkey](https://chrome.google.com/webstore/detail/tampermonkey/dhdgffkkebhmkfjojejmpbldmpobfkfo)
+*   **Chrome**: [Tampermonkey](https://chrome.google.com/webstore/detail/tampermonkey/dhdgffkkebhmkfjojejmpbldmpobfkfo) Broken rn 1.6 worked lol
 *   **Firefox**: [Tampermonkey](https://addons.mozilla.org/en-US/firefox/addon/tampermonkey/) or [Greasemonkey](https://addons.mozilla.org/en-US/firefox/addon/greasemonkey/)
 *   **Edge**: [Tampermonkey](https://microsoftedge.microsoft.com/addons/detail/tampermonkey/iikmkjmpaadaobahmlepeloendndfphd)
 *   **Safari**: [Userscripts](https://apps.apple.com/us/app/userscripts/id1463298887)
