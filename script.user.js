@@ -1,522 +1,921 @@
 // ==UserScript==
-// @name         AI Studio Chat Customizer (Advanced UI v1.9.1)
-// @namespace    http://tampermonkey.net/
-// @version      1.9.1
-// @description  Prioritizes local MS fonts, falls back to Google Fonts. Justifies/aligns text, changes font size (+/-), line spacing (+/-), and type. Panel closes on outside click or Esc, with focus management. Now supports dark mode!
-// @author       pirelike
+// @name         AI Studio Typography Control
+// @namespace    https://aistudio.google.com/
+// @version      1.2.4
+// @description  Fine-grained control over chat text appearance in Google AI Studio - font size, family, line spacing, and alignment
+// @author       Pirelike
 // @match        https://aistudio.google.com/*
-// @grant        GM_setValue
+// @icon         https://www.gstatic.com/aistudio/ai_studio_favicon_2_32x32.png
 // @grant        GM_getValue
+// @grant        GM_setValue
+// @run-at       document-idle
 // ==/UserScript==
 
 (function() {
     'use strict';
 
-    const SCRIPT_PREFIX = "AIStudioChatCustomizer";
-    console.log(`${SCRIPT_PREFIX}: Script attempting to run.`);
+    // ========================================
+    // Configuration
+    // ========================================
 
-    // --- Configuration ---
-    const DEFAULT_FONT_SIZE = "16px";
-    const FONT_SIZE_STEP = 1;
-    const DEFAULT_LINE_SPACING = "1.6";
-    const LINE_SPACING_STEP = 0.1;
-    const ULTIMATE_FALLBACK_FONT = "sans-serif";
-    const DEFAULT_FONT_FAMILY_KEY = "DEFAULT_SANS_SERIF";
-    const DEFAULT_TEXT_ALIGN = "justify";
+    const STORAGE_KEY = 'aistudio_typography_settings';
 
-    const PREDEFINED_FONTS = [
-        { name: "Default System Sans-Serif", value: "DEFAULT_SANS_SERIF", css: "sans-serif" },
-        { name: "Calibri (MS) / Carlito (Google)", value: "CALIBRI_CARLITO", msFont: "Calibri", googleFont: "Carlito", cssFallback: "sans-serif" },
-        { name: "Arial (MS) / Roboto (Google)", value: "ARIAL_ROBOTO", msFont: "Arial", googleFont: "Roboto", cssFallback: "sans-serif"},
-        { name: "Verdana (MS) / Source Sans Pro (Google)", value: "VERDANA_SSP", msFont: "Verdana", googleFont: "Source Sans Pro", cssFallback: "sans-serif"},
-        { name: "Times New Roman (MS) / Noto Serif (Google)", value: "TNR_NOTO_SERIF", msFont: "Times New Roman", googleFont: "Noto Serif", cssFallback: "serif" },
-        { name: "Georgia (MS) / Merriweather (Google)", value: "GEORGIA_MERRIWEATHER", msFont: "Georgia", googleFont: "Merriweather", cssFallback: "serif"},
-        { name: "Consolas (MS) / Inconsolata (Google)", value: "CONSOLAS_INCONSOLATA", msFont: "Consolas", googleFont: "Inconsolata", cssFallback: "monospace" },
-        { name: "Default System Serif", value: "DEFAULT_SERIF", css: "serif" },
-        { name: "Default System Monospace", value: "DEFAULT_MONOSPACE", css: "monospace" },
-        { name: "Other (Custom Font)..." , value: "OTHER_CUSTOM_FONT"}
+    // Font definitions with local/fallback pairs
+    const FONT_OPTIONS = [
+        { name: 'System Default', value: 'inherit', google: null },
+        { name: 'Calibri / Carlito', value: 'Calibri, Carlito, sans-serif', google: 'Carlito' },
+        { name: 'Verdana / Source Sans Pro', value: 'Verdana, "Source Sans Pro", sans-serif', google: 'Source+Sans+Pro' },
+        { name: 'Georgia / Merriweather', value: 'Georgia, Merriweather, serif', google: 'Merriweather' },
+        { name: 'Segoe UI / Open Sans', value: '"Segoe UI", "Open Sans", sans-serif', google: 'Open+Sans' },
+        { name: 'Consolas / Source Code Pro', value: 'Consolas, "Source Code Pro", monospace', google: 'Source+Code+Pro' },
+        { name: 'Arial / Roboto', value: 'Arial, Roboto, sans-serif', google: 'Roboto' },
+        { name: 'Times New Roman / Libre Baskerville', value: '"Times New Roman", "Libre Baskerville", serif', google: 'Libre+Baskerville' },
+        { name: 'Trebuchet MS / PT Sans', value: '"Trebuchet MS", "PT Sans", sans-serif', google: 'PT+Sans' },
+        { name: 'Custom Font', value: 'custom', google: null }
     ];
 
-    const DEFAULT_FONT_FAMILY_CSS = PREDEFINED_FONTS.find(f => f.value === DEFAULT_FONT_FAMILY_KEY)?.css || ULTIMATE_FALLBACK_FONT;
+    const DEFAULT_SETTINGS = {
+        fontSize: '16px',
+        lineHeight: '1.6',
+        fontFamily: 'inherit',
+        customFont: '',
+        textAlign: 'left',
+        hyphenation: true
+    };
 
-    // --- Storage Keys ---
-    const STORAGE_KEY_FONT_SIZE = `${SCRIPT_PREFIX}_fontSize`;
-    const STORAGE_KEY_LINE_SPACING = `${SCRIPT_PREFIX}_lineSpacing`;
-    const STORAGE_KEY_FONT_FAMILY_KEY = `${SCRIPT_PREFIX}_fontFamilyKey`;
-    const STORAGE_KEY_CUSTOM_FONT_VALUE = `${SCRIPT_PREFIX}_customFontValue`;
-    const STORAGE_KEY_TEXT_ALIGN = `${SCRIPT_PREFIX}_textAlign`;
+    // ========================================
+    // State
+    // ========================================
 
-    const STYLE_ID = `${SCRIPT_PREFIX}-styles`;
-    const PANEL_STYLE_ID = `${SCRIPT_PREFIX}-panel-styles`;
-    const GOOGLE_FONTS_LINK_ID_PREFIX = `${SCRIPT_PREFIX}-google-font-`;
-    const SIDEBAR_SELECTOR = 'div.toggles-container';
+    let settings = { ...DEFAULT_SETTINGS };
+    let panelVisible = false;
+    let panelElement = null;
+    let backdropElement = null;
 
-    // --- State Variables ---
-    let currentFontSize, currentFontFamilyKey, currentCustomFontValue, currentTextAlign, currentLineSpacing;
-    let controlPanel, fontSizeInput, fontSizeIncButton, fontSizeDecButton,
-        lineSpacingInput, lineSpacingIncButton, lineSpacingDecButton,
-        fontFamilySelect, fontFamilyCustomInput, textAlignButton, settingsToggleButton;
-    let globalSidebarContainer = null;
-    let activeGoogleFontLinks = new Set();
-    let isDarkMode = false;
+    // ========================================
+    // Storage Functions
+    // ========================================
 
-    // --- Dark Mode Detection ---
-    function detectDarkMode() {
-        const body = document.body;
-        const html = document.documentElement;
-        const isDark = body.classList.contains('dark-theme') ||
-                      body.classList.contains('dark') ||
-                      html.classList.contains('dark-theme') ||
-                      html.classList.contains('dark') ||
-                      body.getAttribute('data-theme') === 'dark' ||
-                      html.getAttribute('data-theme') === 'dark' ||
-                      isDarkColor(getComputedStyle(body).backgroundColor);
-        return isDark;
-    }
+    function loadSettings() {
+        try {
+            if (typeof GM_getValue !== 'undefined') {
+                const saved = GM_getValue(STORAGE_KEY, null);
+                if (saved) {
+                    settings = { ...DEFAULT_SETTINGS, ...JSON.parse(saved) };
+                    return;
+                }
+            }
+        } catch (e) {
+            console.log('GM_getValue not available, falling back to localStorage');
+        }
 
-    function isDarkColor(color) {
-        if (!color || color === 'transparent' || color === 'rgba(0, 0, 0, 0)') return false;
-        const rgb = color.match(/\d+/g);
-        if (!rgb || rgb.length < 3) return false;
-        const [r, g, b] = rgb.map(Number);
-        const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-        return luminance < 0.5;
-    }
-
-    function updateDarkModeState() {
-        const newDarkMode = detectDarkMode();
-        if (newDarkMode !== isDarkMode) {
-            isDarkMode = newDarkMode;
-            updatePanelStyles();
+        try {
+            const saved = localStorage.getItem(STORAGE_KEY);
+            if (saved) {
+                settings = { ...DEFAULT_SETTINGS, ...JSON.parse(saved) };
+            }
+        } catch (e) {
+            console.error('Failed to load settings:', e);
         }
     }
 
-    // --- Panel State and Focus Management ---
-    function openPanel() {
-        if (!controlPanel || !settingsToggleButton) return;
-        updateDarkModeState();
-        controlPanel.style.display = 'block';
-        settingsToggleButton.setAttribute('aria-expanded', 'true');
-        repositionControlPanel();
-        fontSizeInput.focus();
-        document.addEventListener('mousedown', handleClickOutside);
-        document.addEventListener('keydown', handlePanelKeydown);
-    }
-
-    function closePanel() {
-        if (!controlPanel || !settingsToggleButton) return;
-        controlPanel.style.display = 'none';
-        settingsToggleButton.setAttribute('aria-expanded', 'false');
-        settingsToggleButton.focus();
-        document.removeEventListener('mousedown', handleClickOutside);
-        document.removeEventListener('keydown', handlePanelKeydown);
-    }
-
-    function handleClickOutside(event) {
-        if (controlPanel && controlPanel.style.display !== 'none' &&
-            settingsToggleButton &&
-            !controlPanel.contains(event.target) &&
-            !settingsToggleButton.contains(event.target) &&
-            !settingsToggleButton.shadowRoot?.contains(event.target)) {
-            closePanel();
+    function saveSettings() {
+        try {
+            const data = JSON.stringify(settings);
+            if (typeof GM_setValue !== 'undefined') {
+                GM_setValue(STORAGE_KEY, data);
+            }
+            localStorage.setItem(STORAGE_KEY, data);
+        } catch (e) {
+            console.error('Failed to save settings:', e);
         }
     }
 
-    function handlePanelKeydown(event) {
-        if (event.key === 'Escape') {
-            closePanel();
-        }
-    }
+    // ========================================
+    // Google Fonts Loader
+    // ========================================
 
-    // --- Font and Style Logic ---
-    function getFontCssStack(fontKey, customFontName = "") {
-        if (fontKey === "OTHER_CUSTOM_FONT" && customFontName) {
-            return `"${customFontName.replace(/"/g, '')}", ${ULTIMATE_FALLBACK_FONT}`;
-        }
-        const fontConfig = PREDEFINED_FONTS.find(f => f.value === fontKey);
-        if (!fontConfig) return DEFAULT_FONT_FAMILY_CSS;
-        if (fontConfig.css) return fontConfig.css;
-        const stack = [];
-        if (fontConfig.msFont) stack.push(`"${fontConfig.msFont}"`);
-        if (fontConfig.googleFont) stack.push(`"${fontConfig.googleFont}"`);
-        stack.push(fontConfig.cssFallback || ULTIMATE_FALLBACK_FONT);
-        return stack.join(', ');
-    }
+    const loadedFonts = new Set();
 
     function loadGoogleFont(fontName) {
-        if (!fontName || PREDEFINED_FONTS.some(f => f.css === fontName)) return;
-        const fontLinkId = `${GOOGLE_FONTS_LINK_ID_PREFIX}${fontName.replace(/\s+/g, '-')}`;
-        if (document.getElementById(fontLinkId) || activeGoogleFontLinks.has(fontLinkId)) return;
-        const fontLink = document.createElement('link');
-        fontLink.id = fontLinkId;
-        fontLink.rel = 'stylesheet';
-        fontLink.href = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(fontName).replace(/%20/g, '+')}:wght@400;700&display=swap`;
-        document.head.appendChild(fontLink);
-        activeGoogleFontLinks.add(fontLinkId);
+        if (!fontName || loadedFonts.has(fontName)) return;
+
+        const link = document.createElement('link');
+        link.rel = 'stylesheet';
+        link.href = `https://fonts.googleapis.com/css2?family=${fontName.replace(/ /g, '+')}:wght@400;500;600;700&display=swap`;
+        document.head.appendChild(link);
+        loadedFonts.add(fontName);
     }
 
-    function updateStylesAndFontLoading() {
-        PREDEFINED_FONTS.forEach(fontConfig => {
-            if (fontConfig.googleFont) loadGoogleFont(fontConfig.googleFont);
+    function loadFontFallbacks() {
+        FONT_OPTIONS.forEach(font => {
+            if (font.google) {
+                loadGoogleFont(font.google);
+            }
         });
-        let finalFontCss;
-        if (currentFontFamilyKey === "OTHER_CUSTOM_FONT" && currentCustomFontValue) {
-            loadGoogleFont(currentCustomFontValue);
-            finalFontCss = getFontCssStack(currentFontFamilyKey, currentCustomFontValue);
-        } else {
-            finalFontCss = getFontCssStack(currentFontFamilyKey);
+
+        if (settings.customFont && settings.fontFamily === 'custom') {
+            loadGoogleFont(settings.customFont);
         }
-        let styleElement = document.getElementById(STYLE_ID);
-        if (!styleElement) {
+    }
+
+    // We'll use simple Unicode/text icons instead of Material Symbols
+    // since AI Studio's existing setup conflicts with our font loading
+    const ICONS = {
+        typography: '𝐓',
+        alignLeft: '☰',
+        alignJustify: '☰'
+    };
+
+
+    // ========================================
+    // Theme Detection
+    // ========================================
+
+    function isDarkMode() {
+        return document.body.classList.contains('dark-theme') ||
+               document.documentElement.classList.contains('dark-theme') ||
+               document.querySelector('.dark-theme') !== null;
+    }
+
+    function getThemeColors() {
+        const dark = isDarkMode();
+        return {
+            bg: dark ? '#1e1f20' : '#ffffff',
+            bgContainer: dark ? '#282a2c' : '#f8f9fa',
+            bgHover: dark ? '#3c3d40' : '#f1f3f4',
+            bgActive: dark ? '#4a4b4e' : '#e8eaed',
+            text: dark ? '#e3e3e3' : '#1f1f1f',
+            textSecondary: dark ? '#9aa0a6' : '#5f6368',
+            border: dark ? '#444746' : '#dadce0',
+            accent: dark ? '#8ab4f8' : '#1a73e8',
+            accentBg: dark ? 'rgba(138, 180, 248, 0.1)' : 'rgba(26, 115, 232, 0.08)',
+            shadow: dark ? 'rgba(0, 0, 0, 0.6)' : 'rgba(0, 0, 0, 0.15)'
+        };
+    }
+
+    // ========================================
+    // Apply Typography Styles
+    // ========================================
+
+    let styleElement = null;
+
+    function applyStyles() {
+        const fontFamily = settings.fontFamily === 'custom' && settings.customFont
+            ? `"${settings.customFont}", sans-serif`
+            : settings.fontFamily;
+
+        const hyphenRules = settings.hyphenation ? `
+            hyphens: auto !important;
+            -webkit-hyphens: auto !important;
+            -ms-hyphens: auto !important;
+            word-break: break-word !important;
+        ` : `
+            hyphens: none !important;
+            -webkit-hyphens: none !important;
+            word-break: normal !important;
+        `;
+
+        const css = `
+            /* Target ALL text content in chat messages */
+            .chat-turn-container .turn-content,
+            .chat-turn-container .turn-content *,
+            .chat-turn-container .cmark-node,
+            .chat-turn-container .cmark-node *,
+            .chat-turn-container ms-cmark-node,
+            .chat-turn-container ms-cmark-node *,
+            .chat-session-content .turn-content,
+            .chat-session-content .turn-content *,
+            .chat-session-content .cmark-node,
+            .chat-session-content .cmark-node *,
+            .chat-session-content ms-cmark-node,
+            .chat-session-content ms-cmark-node *,
+            ms-chat-turn .turn-content,
+            ms-chat-turn .turn-content *,
+            ms-chat-turn .cmark-node,
+            ms-chat-turn .cmark-node *,
+            ms-chat-turn ms-cmark-node,
+            ms-chat-turn ms-cmark-node *,
+            .v3-font-body,
+            .v3-font-body *,
+            .text-chunk,
+            .text-chunk * {
+                font-size: ${settings.fontSize} !important;
+                line-height: ${settings.lineHeight} !important;
+                font-family: ${fontFamily} !important;
+                text-align: ${settings.textAlign} !important;
+            }
+
+            /* Specific paragraph targeting */
+            .chat-turn-container p,
+            .chat-session-content p,
+            ms-chat-turn p,
+            .cmark-node p,
+            ms-cmark-node p,
+            .turn-content p {
+                font-size: ${settings.fontSize} !important;
+                line-height: ${settings.lineHeight} !important;
+                font-family: ${fontFamily} !important;
+                text-align: ${settings.textAlign} !important;
+                ${settings.textAlign === 'justify' ? hyphenRules : ''}
+            }
+
+            /* List items */
+            .chat-turn-container li,
+            .chat-session-content li,
+            ms-chat-turn li,
+            .cmark-node li,
+            ms-cmark-node li {
+                font-size: ${settings.fontSize} !important;
+                line-height: ${settings.lineHeight} !important;
+                font-family: ${fontFamily} !important;
+                text-align: ${settings.textAlign} !important;
+            }
+
+            /* Headings - slightly larger */
+            .chat-turn-container h1, .chat-turn-container h2, .chat-turn-container h3,
+            .chat-turn-container h4, .chat-turn-container h5, .chat-turn-container h6,
+            .chat-session-content h1, .chat-session-content h2, .chat-session-content h3,
+            .chat-session-content h4, .chat-session-content h5, .chat-session-content h6,
+            ms-chat-turn h1, ms-chat-turn h2, ms-chat-turn h3,
+            ms-chat-turn h4, ms-chat-turn h5, ms-chat-turn h6,
+            .cmark-node h1, .cmark-node h2, .cmark-node h3,
+            .cmark-node h4, .cmark-node h5, .cmark-node h6 {
+                font-family: ${fontFamily} !important;
+                line-height: ${settings.lineHeight} !important;
+            }
+
+            /* Preserve code block styling */
+            .chat-turn-container pre,
+            .chat-turn-container code,
+            .chat-turn-container pre *,
+            .chat-turn-container code *,
+            .chat-session-content pre,
+            .chat-session-content code,
+            .chat-session-content pre *,
+            .chat-session-content code *,
+            ms-chat-turn pre,
+            ms-chat-turn code,
+            ms-chat-turn pre *,
+            ms-chat-turn code *,
+            .cmark-node pre,
+            .cmark-node code,
+            .cmark-node pre *,
+            .cmark-node code *,
+            ms-cmark-node pre,
+            ms-cmark-node code {
+                font-family: 'Google Sans Mono', 'Roboto Mono', Consolas, 'Source Code Pro', Monaco, monospace !important;
+                text-align: left !important;
+                hyphens: none !important;
+            }
+        `;
+
+        if (styleElement) {
+            styleElement.textContent = css;
+        } else {
             styleElement = document.createElement('style');
-            styleElement.id = STYLE_ID;
+            styleElement.id = 'aistudio-typography-styles';
+            styleElement.textContent = css;
             document.head.appendChild(styleElement);
         }
+    }
 
-        styleElement.textContent = `
-            div.chat-turn-container.model ms-prompt-chunk > ms-text-chunk ms-cmark-node,
-            div.chat-turn-container.model ms-prompt-chunk > ms-text-chunk ms-cmark-node span.inline-code {
-                font-size: ${currentFontSize} !important;
-                font-family: ${finalFontCss} !important;
-                line-height: ${currentLineSpacing} !important;
-            }
-            div.chat-turn-container.model ms-prompt-chunk > ms-text-chunk ms-cmark-node p,
-            div.chat-turn-container.model ms-prompt-chunk > ms-text-chunk ms-cmark-node li {
-                text-align: ${currentTextAlign} !important;
-                line-height: ${currentLineSpacing} !important;
-                -webkit-hyphens: none !important; -moz-hyphens: none !important; -ms-hyphens: none !important; hyphens: none !important;
-            }
+    // ========================================
+    // Settings Panel
+    // ========================================
+
+    function createPanel() {
+        if (panelElement) return;
+
+        const colors = getThemeColors();
+
+        // Create backdrop
+        backdropElement = document.createElement('div');
+        backdropElement.id = 'aistudio-typography-backdrop';
+        document.body.appendChild(backdropElement);
+
+        // Create panel
+        panelElement = document.createElement('div');
+        panelElement.id = 'aistudio-typography-panel';
+        panelElement.innerHTML = `
+            <div class="typo-header">
+                <div class="typo-header-title">
+                    <svg class="typo-header-icon" width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M9.93 13.5h4.14L12 7.98zM20 2H4c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-4.05 16.5-1.14-3H9.17l-1.12 3H5.96l5.11-13h1.86l5.11 13h-2.09z"/>
+                    </svg>
+                    <span>Typography</span>
+                </div>
+                <button class="typo-close-btn" aria-label="Close">&times;</button>
+            </div>
+            <div class="typo-body">
+                <!-- Font Size -->
+                <div class="typo-field">
+                    <label class="typo-label">Font Size</label>
+                    <div class="typo-stepper">
+                        <button class="typo-stepper-btn" data-action="decrease-size">&minus;</button>
+                        <input type="text" class="typo-stepper-input" id="typo-font-size" value="${settings.fontSize}">
+                        <button class="typo-stepper-btn" data-action="increase-size">&plus;</button>
+                    </div>
+                </div>
+
+                <!-- Line Spacing -->
+                <div class="typo-field">
+                    <label class="typo-label">Line Spacing</label>
+                    <div class="typo-stepper">
+                        <button class="typo-stepper-btn" data-action="decrease-line">&minus;</button>
+                        <input type="text" class="typo-stepper-input" id="typo-line-height" value="${settings.lineHeight}">
+                        <button class="typo-stepper-btn" data-action="increase-line">&plus;</button>
+                    </div>
+                </div>
+
+                <!-- Font Family -->
+                <div class="typo-field">
+                    <label class="typo-label">Font Family</label>
+                    <select class="typo-select" id="typo-font-family">
+                        ${FONT_OPTIONS.map(f => `<option value="${f.value}" ${settings.fontFamily === f.value ? 'selected' : ''}>${f.name}</option>`).join('')}
+                    </select>
+                </div>
+
+                <!-- Custom Font -->
+                <div class="typo-field" id="typo-custom-font-field" style="display: ${settings.fontFamily === 'custom' ? 'block' : 'none'}">
+                    <label class="typo-label">Custom Font Name</label>
+                    <input type="text" class="typo-text-input" id="typo-custom-font" value="${settings.customFont}" placeholder="e.g., Lato, Nunito, Poppins">
+                    <span class="typo-hint">Enter a Google Font or system font name</span>
+                </div>
+
+                <!-- Text Alignment -->
+                <div class="typo-field">
+                    <label class="typo-label">Text Alignment</label>
+                    <div class="typo-toggle-group">
+                        <button type="button" class="typo-toggle-btn ${settings.textAlign === 'left' ? 'active' : ''}" data-align="left" title="Left Align">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M15 15H3v2h12v-2zm0-8H3v2h12V7zM3 13h18v-2H3v2zm0 8h18v-2H3v2zM3 3v2h18V3H3z"/>
+                            </svg>
+                            <span>Left</span>
+                        </button>
+                        <button type="button" class="typo-toggle-btn ${settings.textAlign === 'justify' ? 'active' : ''}" data-align="justify" title="Justify">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M3 21h18v-2H3v2zm0-4h18v-2H3v2zm0-4h18v-2H3v2zm0-4h18V7H3v2zm0-6v2h18V3H3z"/>
+                            </svg>
+                            <span>Justify</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Hyphenation (only visible when justify is selected) -->
+                <div class="typo-field" id="typo-hyphen-field" style="display: ${settings.textAlign === 'justify' ? 'block' : 'none'}">
+                    <label class="typo-label">Word Breaking</label>
+                    <div class="typo-toggle-group">
+                        <button type="button" class="typo-toggle-btn ${settings.hyphenation ? 'active' : ''}" data-hyphen="true" title="Allow hyphenation">
+                            <span>Hyphenate</span>
+                        </button>
+                        <button type="button" class="typo-toggle-btn ${!settings.hyphenation ? 'active' : ''}" data-hyphen="false" title="No hyphenation">
+                            <span>No Break</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Reset -->
+                <div class="typo-field typo-reset-field">
+                    <button type="button" class="typo-reset-btn" id="typo-reset">Reset to Defaults</button>
+                </div>
+            </div>
         `;
+
+        document.body.appendChild(panelElement);
+        addPanelStyles();
+        attachPanelEvents();
     }
 
-    // --- UI Creation ---
-    function parseFontSize(value) {
-        const num = parseFloat(value);
-        const unit = value.match(/[a-zA-Z%]+$/)?.[0] || 'px';
-        return { number: isNaN(num) ? parseFloat(DEFAULT_FONT_SIZE) : num, unit: unit };
-    }
+    function addPanelStyles() {
+        const colors = getThemeColors();
 
-    function updateTextAlignButtonText() {
-        if (textAlignButton) {
-            textAlignButton.textContent = currentTextAlign === 'justify' ? 'Align: Justify (Click to change)' : 'Align: Left (Click to change)';
-        }
-    }
+        const existingStyle = document.getElementById('aistudio-typography-panel-styles');
+        if (existingStyle) existingStyle.remove();
 
-    function repositionControlPanel() {
-        if (!controlPanel || !globalSidebarContainer || controlPanel.style.display === 'none') return;
-        const sidebarRect = globalSidebarContainer.getBoundingClientRect();
-        const panelRect = controlPanel.getBoundingClientRect();
-        let topPosition = sidebarRect.top;
-        if (topPosition + panelRect.height > window.innerHeight - 10) {
-            topPosition = Math.max(10, window.innerHeight - panelRect.height - 10);
-        }
-        controlPanel.style.top = `${Math.max(10, topPosition)}px`;
-        controlPanel.style.right = `${window.innerWidth - sidebarRect.left + 10}px`;
-        controlPanel.style.bottom = 'auto';
-    }
+        const style = document.createElement('style');
+        style.id = 'aistudio-typography-panel-styles';
+        style.textContent = `
+            #aistudio-typography-backdrop {
+                position: fixed;
+                inset: 0;
+                background: rgba(0, 0, 0, 0.4);
+                z-index: 99999;
+                opacity: 0;
+                visibility: hidden;
+                transition: opacity 0.2s ease, visibility 0.2s ease;
+            }
 
-    function updatePanelStyles() {
-        const styleElement = document.getElementById(PANEL_STYLE_ID);
-        if (!styleElement) return;
-        const theme = isDarkMode ? getDarkThemeCSS() : getLightThemeCSS();
-        styleElement.textContent = getBaseCSS() + theme;
-    }
+            #aistudio-typography-backdrop.visible {
+                opacity: 1;
+                visibility: visible;
+            }
 
-    function getBaseCSS() {
-        return `
-            #${SCRIPT_PREFIX}-control-panel { position: fixed; display: none; min-width: 280px; padding: 15px; border-radius: 8px; z-index: 9998; box-shadow: 0 4px 12px rgba(0,0,0,0.15); font-family: Roboto, Arial, sans-serif; font-size: 14px; }
-            #${SCRIPT_PREFIX}-panelTitle { margin-top: 0; margin-bottom: 15px; text-align: center; }
-            #${SCRIPT_PREFIX}-control-panel label { display: block; margin-bottom: 5px; }
-            .script-input-base { width: 100%; padding: 8px; margin-bottom: 10px; border-radius: 4px; box-sizing: border-box; height: 38px; }
-            .script-button-small { display: flex; align-items: center; justify-content: center; padding: 5px 10px; min-width: 30px; border: none; cursor: pointer; font-size: 16px; line-height: 1; box-sizing: border-box; height: 38px; }
-            .fs-control-container { display: flex; align-items: stretch; margin-bottom: 10px; border-radius: 4px; overflow: hidden; }
-            .fs-control-container > * { border-radius: 0 !important; }
-            #${SCRIPT_PREFIX}-fontSizeInput, #${SCRIPT_PREFIX}-lineSpacingInput { flex-grow: 1; text-align: center; margin: 0; width: auto; margin-bottom: 0; }
-            .btn-decr { background-color: #dc3545; color: white; }
-            .btn-incr { background-color: #28a745; color: white; }
-            .btn-full-width { display: block; width: 100% !important; text-align: left; padding-left: 8px; margin-top: 10px; margin-bottom: 0; cursor: pointer; }
+            #aistudio-typography-panel {
+                position: fixed;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%) scale(0.95);
+                width: 340px;
+                max-width: calc(100vw - 32px);
+                max-height: calc(100vh - 32px);
+                background: ${colors.bg};
+                border-radius: 16px;
+                box-shadow: 0 8px 32px ${colors.shadow}, 0 0 0 1px ${colors.border};
+                z-index: 100000;
+                font-family: 'Google Sans', 'Segoe UI', Roboto, sans-serif;
+                opacity: 0;
+                visibility: hidden;
+                transition: opacity 0.2s ease, visibility 0.2s ease, transform 0.2s ease;
+                overflow: hidden;
+            }
+
+            #aistudio-typography-panel.visible {
+                opacity: 1;
+                visibility: visible;
+                transform: translate(-50%, -50%) scale(1);
+            }
+
+            .typo-header {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                padding: 16px 16px 16px 20px;
+                border-bottom: 1px solid ${colors.border};
+            }
+
+            .typo-header-title {
+                display: flex;
+                align-items: center;
+                gap: 12px;
+                font-size: 16px;
+                font-weight: 500;
+                color: ${colors.text};
+            }
+
+            .typo-header-icon {
+                font-size: 24px;
+                color: ${colors.accent};
+            }
+
+            .typo-close-btn {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                width: 36px;
+                height: 36px;
+                border: none;
+                border-radius: 50%;
+                background: transparent;
+                color: ${colors.textSecondary};
+                cursor: pointer;
+                transition: background 0.15s ease;
+            }
+
+            .typo-close-btn:hover {
+                background: ${colors.bgHover};
+            }
+
+            .typo-body {
+                padding: 20px;
+                overflow-y: auto;
+                max-height: calc(100vh - 140px);
+            }
+
+            .typo-field {
+                margin-bottom: 20px;
+            }
+
+            .typo-field:last-child {
+                margin-bottom: 0;
+            }
+
+            .typo-label {
+                display: block;
+                font-size: 12px;
+                font-weight: 500;
+                color: ${colors.textSecondary};
+                margin-bottom: 8px;
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+            }
+
+            .typo-stepper {
+                display: flex;
+                align-items: center;
+                gap: 4px;
+                background: ${colors.bgContainer};
+                border-radius: 8px;
+                padding: 4px;
+            }
+
+            .typo-stepper-btn {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                width: 36px;
+                height: 36px;
+                border: none;
+                border-radius: 6px;
+                background: transparent;
+                color: ${colors.text};
+                cursor: pointer;
+                transition: background 0.15s ease;
+            }
+
+            .typo-stepper-btn:hover {
+                background: ${colors.bgHover};
+            }
+
+            .typo-stepper-btn:active {
+                background: ${colors.bgActive};
+            }
+
+            .typo-stepper-input {
+                flex: 1;
+                min-width: 0;
+                height: 36px;
+                border: none;
+                border-radius: 6px;
+                background: ${colors.bg};
+                color: ${colors.text};
+                font-size: 14px;
+                font-weight: 500;
+                text-align: center;
+                outline: none;
+            }
+
+            .typo-stepper-input:focus {
+                box-shadow: 0 0 0 2px ${colors.accent};
+            }
+
+            .typo-select {
+                width: 100%;
+                height: 44px;
+                padding: 0 12px;
+                border: 1px solid ${colors.border};
+                border-radius: 8px;
+                background: ${colors.bg};
+                color: ${colors.text};
+                font-size: 14px;
+                cursor: pointer;
+                outline: none;
+                transition: border-color 0.15s ease;
+            }
+
+            .typo-select:hover {
+                border-color: ${colors.textSecondary};
+            }
+
+            .typo-select:focus {
+                border-color: ${colors.accent};
+            }
+
+            .typo-text-input {
+                width: 100%;
+                height: 44px;
+                padding: 0 12px;
+                border: 1px solid ${colors.border};
+                border-radius: 8px;
+                background: ${colors.bg};
+                color: ${colors.text};
+                font-size: 14px;
+                outline: none;
+                box-sizing: border-box;
+                transition: border-color 0.15s ease;
+            }
+
+            .typo-text-input:focus {
+                border-color: ${colors.accent};
+            }
+
+            .typo-hint {
+                display: block;
+                font-size: 11px;
+                color: ${colors.textSecondary};
+                margin-top: 6px;
+            }
+
+            .typo-toggle-group {
+                display: flex;
+                gap: 8px;
+                width: 100%;
+            }
+
+            .typo-toggle-btn {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                gap: 6px;
+                flex: 1;
+                height: 40px;
+                padding: 0 16px;
+                border: 1px solid ${colors.border};
+                border-radius: 8px;
+                background: ${colors.bg};
+                color: ${colors.textSecondary};
+                font-size: 13px;
+                cursor: pointer;
+                transition: all 0.15s ease;
+            }
+
+            .typo-toggle-btn:hover {
+                background: ${colors.bgHover};
+                border-color: ${colors.textSecondary};
+            }
+
+            .typo-toggle-btn.active {
+                background: ${colors.accentBg};
+                border-color: ${colors.accent};
+                color: ${colors.accent};
+            }
+
+            .typo-toggle-btn svg {
+                flex-shrink: 0;
+            }
+
+            .typo-toggle-label {
+                font-weight: 500;
+            }
+
+            .typo-reset-field {
+                padding-top: 16px;
+                border-top: 1px solid ${colors.border};
+                margin-top: 24px;
+            }
+
+            .typo-reset-btn {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                gap: 8px;
+                width: 100%;
+                height: 44px;
+                border: 1px solid ${colors.border};
+                border-radius: 8px;
+                background: ${colors.bg};
+                color: ${colors.textSecondary};
+                font-size: 14px;
+                font-weight: 500;
+                cursor: pointer;
+                transition: all 0.15s ease;
+            }
+
+            .typo-reset-btn:hover {
+                background: ${colors.bgHover};
+                color: ${colors.text};
+            }
+
         `;
+        document.head.appendChild(style);
     }
 
-    function getLightThemeCSS() {
-        return `
-            #${SCRIPT_PREFIX}-control-panel { background-color: rgba(250, 250, 250, 0.97); border: 1px solid #ccc; }
-            #${SCRIPT_PREFIX}-panelTitle, #${SCRIPT_PREFIX}-control-panel label { color: #333; }
-            .script-input-base { border: 1px solid #ddd; background-color: #fff; color: #333; }
-            .fs-control-container { border: 1px solid #ddd; }
-            #${SCRIPT_PREFIX}-fontSizeInput, #${SCRIPT_PREFIX}-lineSpacingInput { border-left: 1px solid #ddd !important; border-right: 1px solid #ddd !important; }
-            .script-input-base:focus { outline: 2px solid #007bff; outline-offset: -2px; }
-            .btn-full-width.script-input-base { background-color: #fff !important; border: 1px solid #ddd !important; color: #333 !important; }
-            .btn-full-width.script-input-base:hover { border-color: #ccc !important; }
-        `;
+    function attachPanelEvents() {
+        // Close button
+        const closeBtn = panelElement.querySelector('.typo-close-btn');
+        closeBtn.addEventListener('click', hidePanel);
+
+        // Backdrop click
+        backdropElement.addEventListener('click', hidePanel);
+
+        // Escape key
+        document.addEventListener('keydown', handleKeyDown);
+
+        // Font size controls
+        panelElement.querySelector('[data-action="decrease-size"]').addEventListener('click', () => adjustFontSize(-1));
+        panelElement.querySelector('[data-action="increase-size"]').addEventListener('click', () => adjustFontSize(1));
+
+        // Line height controls
+        panelElement.querySelector('[data-action="decrease-line"]').addEventListener('click', () => adjustLineHeight(-0.1));
+        panelElement.querySelector('[data-action="increase-line"]').addEventListener('click', () => adjustLineHeight(0.1));
+
+        // Font size input
+        panelElement.querySelector('#typo-font-size').addEventListener('change', (e) => {
+            settings.fontSize = e.target.value;
+            saveSettings();
+            applyStyles();
+        });
+
+        // Line height input
+        panelElement.querySelector('#typo-line-height').addEventListener('change', (e) => {
+            settings.lineHeight = e.target.value;
+            saveSettings();
+            applyStyles();
+        });
+
+        // Font family select
+        panelElement.querySelector('#typo-font-family').addEventListener('change', (e) => {
+            settings.fontFamily = e.target.value;
+            document.getElementById('typo-custom-font-field').style.display =
+                e.target.value === 'custom' ? 'block' : 'none';
+            saveSettings();
+            applyStyles();
+        });
+
+        // Custom font input
+        panelElement.querySelector('#typo-custom-font').addEventListener('change', (e) => {
+            settings.customFont = e.target.value;
+            if (settings.customFont) {
+                loadGoogleFont(settings.customFont);
+            }
+            saveSettings();
+            applyStyles();
+        });
+
+        // Alignment buttons
+        panelElement.querySelectorAll('.typo-toggle-btn[data-align]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                panelElement.querySelectorAll('.typo-toggle-btn[data-align]').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                settings.textAlign = btn.dataset.align;
+
+                // Show/hide hyphenation option
+                document.getElementById('typo-hyphen-field').style.display =
+                    settings.textAlign === 'justify' ? 'block' : 'none';
+
+                saveSettings();
+                applyStyles();
+            });
+        });
+
+        // Hyphenation buttons
+        panelElement.querySelectorAll('.typo-toggle-btn[data-hyphen]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                panelElement.querySelectorAll('.typo-toggle-btn[data-hyphen]').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                settings.hyphenation = btn.dataset.hyphen === 'true';
+                saveSettings();
+                applyStyles();
+            });
+        });
+
+        // Reset button
+        panelElement.querySelector('#typo-reset').addEventListener('click', () => {
+            settings = { ...DEFAULT_SETTINGS };
+            saveSettings();
+            updatePanelInputs();
+            applyStyles();
+        });
     }
 
-    function getDarkThemeCSS() {
-        return `
-            #${SCRIPT_PREFIX}-control-panel { background-color: rgba(40, 40, 40, 0.97); border: 1px solid #555; }
-            #${SCRIPT_PREFIX}-panelTitle, #${SCRIPT_PREFIX}-control-panel label { color: #e0e0e0; }
-            .script-input-base { border: 1px solid #555; background-color: #333; color: #e0e0e0; }
-            .script-input-base:hover:not(:focus) { border-color: #777; }
-            .fs-control-container { border: 1px solid #555; }
-            #${SCRIPT_PREFIX}-fontSizeInput, #${SCRIPT_PREFIX}-lineSpacingInput { border-left: 1px solid #555 !important; border-right: 1px solid #555 !important; }
-            .script-input-base:focus { outline: 2px solid #4dabf7; outline-offset: -2px; }
-            .script-input-base::placeholder { color: #aaa; }
-        `;
-    }
-
-    function injectPanelStyles() {
-        if (document.getElementById(PANEL_STYLE_ID)) return;
-        const styleElement = document.createElement('style');
-        styleElement.id = PANEL_STYLE_ID;
-        document.head.appendChild(styleElement);
-        updateDarkModeState();
-        updatePanelStyles();
-    }
-
-    function createSettingsPanel() {
-        injectPanelStyles();
-        controlPanel = document.createElement('div');
-        controlPanel.id = `${SCRIPT_PREFIX}-control-panel`;
-        controlPanel.setAttribute('role', 'dialog');
-        const title = document.createElement('h4');
-        title.id = `${SCRIPT_PREFIX}-panelTitle`;
-        title.textContent = 'Chat Display Settings';
-        controlPanel.appendChild(title);
-
-        const fsLabel = document.createElement('label');
-        fsLabel.textContent = 'Font Size: ';
-        fsLabel.htmlFor = `${SCRIPT_PREFIX}-fontSizeInput`;
-        controlPanel.appendChild(fsLabel);
-        const fsControlContainer = document.createElement('div');
-        fsControlContainer.className = 'fs-control-container';
-        fontSizeDecButton = document.createElement('button');
-        fontSizeDecButton.textContent = '-';
-        fontSizeDecButton.className = 'script-button-small btn-decr';
-        fontSizeDecButton.addEventListener('click', async () => {
-            let { number, unit } = parseFontSize(fontSizeInput.value);
-            fontSizeInput.value = currentFontSize = `${Math.max(1, number - FONT_SIZE_STEP)}${unit}`;
-            await GM_setValue(STORAGE_KEY_FONT_SIZE, currentFontSize);
-            updateStylesAndFontLoading();
-        });
-        fsControlContainer.appendChild(fontSizeDecButton);
-        fontSizeInput = document.createElement('input');
-        fontSizeInput.id = `${SCRIPT_PREFIX}-fontSizeInput`;
-        fontSizeInput.type = 'text';
-        fontSizeInput.value = currentFontSize;
-        fontSizeInput.className = 'script-input-base';
-        fontSizeInput.addEventListener('change', async () => {
-            currentFontSize = fontSizeInput.value.trim() || DEFAULT_FONT_SIZE;
-            fontSizeInput.value = currentFontSize;
-            await GM_setValue(STORAGE_KEY_FONT_SIZE, currentFontSize);
-            updateStylesAndFontLoading();
-        });
-        fsControlContainer.appendChild(fontSizeInput);
-        fontSizeIncButton = document.createElement('button');
-        fontSizeIncButton.textContent = '+';
-        fontSizeIncButton.className = 'script-button-small btn-incr';
-        fontSizeIncButton.addEventListener('click', async () => {
-            let { number, unit } = parseFontSize(fontSizeInput.value);
-            fontSizeInput.value = currentFontSize = `${number + FONT_SIZE_STEP}${unit}`;
-            await GM_setValue(STORAGE_KEY_FONT_SIZE, currentFontSize);
-            updateStylesAndFontLoading();
-        });
-        fsControlContainer.appendChild(fontSizeIncButton);
-        controlPanel.appendChild(fsControlContainer);
-
-        const lsLabel = document.createElement('label');
-        lsLabel.textContent = 'Line Spacing: ';
-        lsLabel.htmlFor = `${SCRIPT_PREFIX}-lineSpacingInput`;
-        controlPanel.appendChild(lsLabel);
-        const lsControlContainer = document.createElement('div');
-        lsControlContainer.className = 'fs-control-container';
-        lineSpacingDecButton = document.createElement('button');
-        lineSpacingDecButton.textContent = '-';
-        lineSpacingDecButton.className = 'script-button-small btn-decr';
-        lineSpacingDecButton.addEventListener('click', async () => {
-            let currentValue = parseFloat(lineSpacingInput.value) || parseFloat(DEFAULT_LINE_SPACING);
-            let newValue = Math.max(1.0, currentValue - LINE_SPACING_STEP);
-            lineSpacingInput.value = currentLineSpacing = newValue.toFixed(1);
-            await GM_setValue(STORAGE_KEY_LINE_SPACING, currentLineSpacing);
-            updateStylesAndFontLoading();
-        });
-        lsControlContainer.appendChild(lineSpacingDecButton);
-        lineSpacingInput = document.createElement('input');
-        lineSpacingInput.id = `${SCRIPT_PREFIX}-lineSpacingInput`;
-        lineSpacingInput.type = 'text';
-        lineSpacingInput.value = currentLineSpacing;
-        lineSpacingInput.className = 'script-input-base';
-        lineSpacingInput.addEventListener('change', async () => {
-            let val = parseFloat(lineSpacingInput.value.trim());
-            currentLineSpacing = !isNaN(val) ? String(val) : DEFAULT_LINE_SPACING;
-            lineSpacingInput.value = currentLineSpacing;
-            await GM_setValue(STORAGE_KEY_LINE_SPACING, currentLineSpacing);
-            updateStylesAndFontLoading();
-        });
-        lsControlContainer.appendChild(lineSpacingInput);
-        lineSpacingIncButton = document.createElement('button');
-        lineSpacingIncButton.textContent = '+';
-        lineSpacingIncButton.className = 'script-button-small btn-incr';
-        lineSpacingIncButton.addEventListener('click', async () => {
-            let currentValue = parseFloat(lineSpacingInput.value) || parseFloat(DEFAULT_LINE_SPACING);
-            let newValue = currentValue + LINE_SPACING_STEP;
-            lineSpacingInput.value = currentLineSpacing = newValue.toFixed(1);
-            await GM_setValue(STORAGE_KEY_LINE_SPACING, currentLineSpacing);
-            updateStylesAndFontLoading();
-        });
-        lsControlContainer.appendChild(lineSpacingIncButton);
-        controlPanel.appendChild(lsControlContainer);
-
-        const ffLabel = document.createElement('label');
-        ffLabel.textContent = 'Font Family: ';
-        ffLabel.htmlFor = `${SCRIPT_PREFIX}-fontFamilySelect`;
-        controlPanel.appendChild(ffLabel);
-        fontFamilySelect = document.createElement('select');
-        fontFamilySelect.id = `${SCRIPT_PREFIX}-fontFamilySelect`;
-        fontFamilySelect.className = 'script-input-base';
-        PREDEFINED_FONTS.forEach(font => {
-            const option = document.createElement('option');
-            option.value = font.value;
-            option.textContent = font.name;
-            fontFamilySelect.appendChild(option);
-        });
-        fontFamilySelect.addEventListener('change', handleFontFamilyChange);
-        controlPanel.appendChild(fontFamilySelect);
-        fontFamilyCustomInput = document.createElement('input');
-        fontFamilyCustomInput.type = 'text';
-        fontFamilyCustomInput.placeholder = 'Enter custom font (e.g., from Google Fonts)';
-        fontFamilyCustomInput.className = 'script-input-base';
-        fontFamilyCustomInput.style.display = 'none';
-        fontFamilyCustomInput.addEventListener('input', handleFontFamilyChange);
-        controlPanel.appendChild(fontFamilyCustomInput);
-
-        textAlignButton = document.createElement('button');
-        textAlignButton.className = 'script-input-base btn-full-width';
-        updateTextAlignButtonText();
-        textAlignButton.addEventListener('click', async () => {
-            currentTextAlign = (currentTextAlign === 'justify') ? 'left' : 'justify';
-            updateTextAlignButtonText();
-            await GM_setValue(STORAGE_KEY_TEXT_ALIGN, currentTextAlign);
-            updateStylesAndFontLoading();
-        });
-        controlPanel.appendChild(textAlignButton);
-
-        document.body.appendChild(controlPanel);
-    }
-
-    async function handleFontFamilyChange() {
-        const selectedKey = fontFamilySelect.value;
-        currentFontFamilyKey = selectedKey;
-        if (selectedKey === "OTHER_CUSTOM_FONT") {
-            fontFamilyCustomInput.style.display = 'block';
-            currentCustomFontValue = fontFamilyCustomInput.value.trim();
-        } else {
-            fontFamilyCustomInput.style.display = 'none';
-            fontFamilyCustomInput.value = '';
-            currentCustomFontValue = "";
-        }
-        await GM_setValue(STORAGE_KEY_FONT_FAMILY_KEY, selectedKey);
-        await GM_setValue(STORAGE_KEY_CUSTOM_FONT_VALUE, currentCustomFontValue);
-        updateStylesAndFontLoading();
-    }
-
-    function setInitialFontFamilyUI() {
-        fontFamilySelect.value = currentFontFamilyKey;
-        if (currentFontFamilyKey === "OTHER_CUSTOM_FONT") {
-            fontFamilyCustomInput.style.display = 'block';
-            fontFamilyCustomInput.value = currentCustomFontValue;
+    function handleKeyDown(e) {
+        if (e.key === 'Escape' && panelVisible) {
+            hidePanel();
         }
     }
 
-    // --- REVERTED FUNCTION for Cross-Browser Compatibility ---
-    function addToggleButtonToSidebar(sidebarContainer) {
-        globalSidebarContainer = sidebarContainer;
-        settingsToggleButton = document.createElement('button');
-
-        // This button creation logic is from v1.6.0 to ensure it works on all browsers
-        settingsToggleButton.className = "mdc-icon-button mat-mdc-icon-button mat-mdc-button-base gmat-mdc-button mat-unthemed";
-        settingsToggleButton.setAttribute('type', 'button');
-        settingsToggleButton.setAttribute('mattooltip', 'Chat Display Settings');
-        settingsToggleButton.title = 'Chat Display Settings';
-        settingsToggleButton.setAttribute('mattooltipposition', 'left');
-        settingsToggleButton.setAttribute('aria-label', 'Open Chat Display Settings');
-        settingsToggleButton.setAttribute('aria-haspopup', 'dialog');
-        settingsToggleButton.setAttribute('aria-expanded', 'false');
-
-        const rippleSpan = document.createElement('span');
-        rippleSpan.className = 'mat-mdc-button-persistent-ripple mdc-icon-button__ripple';
-        settingsToggleButton.appendChild(rippleSpan);
-
-        const iconSpan = document.createElement('span');
-        iconSpan.textContent = 'text_format';
-        iconSpan.className = 'material-symbols-outlined notranslate';
-        iconSpan.setAttribute('aria-hidden', 'true');
-        settingsToggleButton.appendChild(iconSpan);
-
-        const focusIndicator = document.createElement('span');
-        focusIndicator.className = 'mat-focus-indicator';
-        settingsToggleButton.appendChild(focusIndicator);
-
-        const touchTarget = document.createElement('span');
-        touchTarget.className = 'mat-mdc-button-touch-target';
-        settingsToggleButton.appendChild(touchTarget);
-
-        // This event listener uses the advanced open/close panel functions from v1.9.1
-        settingsToggleButton.addEventListener('click', () => {
-            if (controlPanel.style.display === 'none') openPanel();
-            else closePanel();
-        });
-
-        sidebarContainer.appendChild(settingsToggleButton);
-        console.log(`${SCRIPT_PREFIX}: Toggle button (icon: text_format) added to sidebar.`);
+    function adjustFontSize(delta) {
+        const input = document.getElementById('typo-font-size');
+        const match = settings.fontSize.match(/^([\d.]+)(.*)$/);
+        if (match) {
+            const value = Math.max(8, parseFloat(match[1]) + delta);
+            const unit = match[2] || 'px';
+            settings.fontSize = value + unit;
+            input.value = settings.fontSize;
+            saveSettings();
+            applyStyles();
+        }
     }
 
-    async function init() {
-        try {
-            currentFontSize = await GM_getValue(STORAGE_KEY_FONT_SIZE, DEFAULT_FONT_SIZE);
-            currentLineSpacing = await GM_getValue(STORAGE_KEY_LINE_SPACING, DEFAULT_LINE_SPACING);
-            currentFontFamilyKey = await GM_getValue(STORAGE_KEY_FONT_FAMILY_KEY, DEFAULT_FONT_FAMILY_KEY);
-            currentCustomFontValue = await GM_getValue(STORAGE_KEY_CUSTOM_FONT_VALUE, "");
-            currentTextAlign = await GM_getValue(STORAGE_KEY_TEXT_ALIGN, DEFAULT_TEXT_ALIGN);
-        } catch (error) {
-            console.error(`${SCRIPT_PREFIX}: Error loading settings:`, error);
-            [currentFontSize, currentLineSpacing, currentFontFamilyKey, currentCustomFontValue, currentTextAlign] =
-            [DEFAULT_FONT_SIZE, DEFAULT_LINE_SPACING, DEFAULT_FONT_FAMILY_KEY, "", DEFAULT_TEXT_ALIGN];
+    function adjustLineHeight(delta) {
+        const input = document.getElementById('typo-line-height');
+        const value = Math.max(1, parseFloat(settings.lineHeight) + delta);
+        settings.lineHeight = value.toFixed(1);
+        input.value = settings.lineHeight;
+        saveSettings();
+        applyStyles();
+    }
+
+    function updatePanelInputs() {
+        if (!panelElement) return;
+
+        document.getElementById('typo-font-size').value = settings.fontSize;
+        document.getElementById('typo-line-height').value = settings.lineHeight;
+        document.getElementById('typo-font-family').value = settings.fontFamily;
+        document.getElementById('typo-custom-font').value = settings.customFont;
+        document.getElementById('typo-custom-font-field').style.display =
+            settings.fontFamily === 'custom' ? 'block' : 'none';
+        document.getElementById('typo-hyphen-field').style.display =
+            settings.textAlign === 'justify' ? 'block' : 'none';
+
+        panelElement.querySelectorAll('.typo-toggle-btn[data-align]').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.align === settings.textAlign);
+        });
+
+        panelElement.querySelectorAll('.typo-toggle-btn[data-hyphen]').forEach(btn => {
+            btn.classList.toggle('active', (btn.dataset.hyphen === 'true') === settings.hyphenation);
+        });
+    }
+
+    function showPanel() {
+        if (!panelElement) createPanel();
+        updatePanelInputs();
+
+        // Update styles for current theme
+        addPanelStyles();
+
+        panelElement.classList.add('visible');
+        backdropElement.classList.add('visible');
+        panelVisible = true;
+    }
+
+    function hidePanel() {
+        if (panelElement) {
+            panelElement.classList.remove('visible');
         }
+        if (backdropElement) {
+            backdropElement.classList.remove('visible');
+        }
+        panelVisible = false;
+    }
 
-        createSettingsPanel();
-        setInitialFontFamilyUI();
-        updateTextAlignButtonText();
-        lineSpacingInput.value = currentLineSpacing;
-        updateStylesAndFontLoading();
-        window.addEventListener('resize', repositionControlPanel);
+    // ========================================
+    // Sidebar Button
+    // ========================================
 
-        const darkModeObserver = new MutationObserver(() => updateDarkModeState());
-        darkModeObserver.observe(document.body, { attributes: true, attributeFilter: ['class', 'data-theme'] });
-        darkModeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'data-theme'] });
+    function addSidebarButton() {
+        const findNavAndInsert = () => {
+            const bottomActions = document.querySelector('.bottom-actions');
 
-        const observer = new MutationObserver((mutationsList, obs) => {
-            const sidebarContainer = document.querySelector(SIDEBAR_SELECTOR);
-            if (sidebarContainer && !sidebarContainer.querySelector('[title="Chat Display Settings"]')) {
-                console.log(`${SCRIPT_PREFIX}: Found sidebar container. Injecting button.`);
-                addToggleButtonToSidebar(sidebarContainer);
-                obs.disconnect();
+            if (bottomActions && !document.getElementById('aistudio-typography-sidebar-btn')) {
+                // Match the exact structure of the "Let it snow" button
+                const button = document.createElement('button');
+                button.id = 'aistudio-typography-sidebar-btn';
+                button.setAttribute('ms-button', '');
+                button.setAttribute('variant', 'borderless');
+                button.className = 'ms-button-borderless';
+                button.setAttribute('aria-disabled', 'false');
+                button.innerHTML = `<svg style="width:20px;height:20px;margin-right:8px;flex-shrink:0;" viewBox="0 0 24 24" fill="currentColor"><path d="M9.93 13.5h4.14L12 7.98zM20 2H4c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-4.05 16.5-1.14-3H9.17l-1.12 3H5.96l5.11-13h1.86l5.11 13h-2.09z"/></svg><span>Typography</span>`;
+                
+                // Style to match other sidebar buttons (left-aligned)
+                button.style.cssText = 'display: flex; align-items: center; justify-content: flex-start; width: 100%; text-align: left;';
+
+                button.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (panelVisible) {
+                        hidePanel();
+                    } else {
+                        showPanel();
+                    }
+                });
+
+                // Insert before the "Let it snow" button or at the start
+                const letItSnowBtn = bottomActions.querySelector('.let-it-snow-button');
+                if (letItSnowBtn) {
+                    bottomActions.insertBefore(button, letItSnowBtn);
+                } else {
+                    bottomActions.insertBefore(button, bottomActions.firstChild);
+                }
+                return true;
+            }
+            return false;
+        };
+
+        if (!findNavAndInsert()) {
+            const observer = new MutationObserver((mutations, obs) => {
+                if (findNavAndInsert()) {
+                    obs.disconnect();
+                }
+            });
+
+            observer.observe(document.body, {
+                childList: true,
+                subtree: true
+            });
+
+            setTimeout(() => observer.disconnect(), 30000);
+        }
+    }
+
+    // ========================================
+    // Initialization
+    // ========================================
+
+    function init() {
+        loadSettings();
+        loadFontFallbacks();
+        applyStyles();
+        addSidebarButton();
+
+        // Watch for theme changes
+        const themeObserver = new MutationObserver(() => {
+            if (panelElement) {
+                addPanelStyles();
             }
         });
 
-        observer.observe(document.body, {
-            childList: true,
-            subtree: true
+        themeObserver.observe(document.body, {
+            attributes: true,
+            attributeFilter: ['class']
         });
 
-        setTimeout(() => {
-            observer.disconnect();
-            if (!globalSidebarContainer) {
-                console.warn(`${SCRIPT_PREFIX}: Sidebar not found after 15 seconds. The site structure may have changed.`);
-            }
-        }, 15000);
+        console.log('AI Studio Typography Control v1.2.4 initialized');
     }
 
-    if (document.readyState === "complete" || document.readyState === "interactive") init();
-    else window.addEventListener('DOMContentLoaded', init, { once: true });
-
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+    } else {
+        init();
+    }
 })();
